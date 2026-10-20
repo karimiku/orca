@@ -94,7 +94,7 @@ export const ROOT_HELP_TEXT_SECONDARY = [
   '  --text <text>             Text to send to the terminal',
   '  --enter                   Append Enter after sending text',
   '  --interrupt               Send as an interrupt-style input when supported',
-  '  --wait-submit <seconds>   Observe this accepted prompt without resending it',
+  '  --wait-submit <seconds>   Observe the accepted prompt without resending it (default 10; 0 opts out)',
   '  --retry-request <id>      Resume the same durable prompt request after an ambiguous transport failure',
   '',
   'Terminal List Options:',

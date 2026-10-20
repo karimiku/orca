@@ -344,9 +344,10 @@ describe('terminal send CLI', () => {
         enter: true,
         interrupt: false,
         agentPrompt: true,
+        waitSubmitMs: 10_000,
         client: { id: 'orca-cli', type: 'desktop' }
       },
-      { terminalPromptPreflight: { runtimeId: 'runtime-current' } }
+      { terminalPromptPreflight: { runtimeId: 'runtime-current' }, timeoutMs: 20_000 }
     )
   })
 
@@ -708,11 +709,13 @@ describe('terminal send CLI', () => {
     expect(call.mock.calls.map((args) => args[2])).toEqual([
       {
         terminalPromptPreflight: { runtimeId: 'runtime-current' },
-        orchestrationRequestId: '22222222-2222-4222-8222-222222222222'
+        orchestrationRequestId: '22222222-2222-4222-8222-222222222222',
+        timeoutMs: 20_000
       },
       {
         terminalPromptPreflight: { runtimeId: 'runtime-current' },
-        orchestrationRequestId: '22222222-2222-4222-8222-222222222222'
+        orchestrationRequestId: '22222222-2222-4222-8222-222222222222',
+        timeoutMs: 20_000
       }
     ])
   })

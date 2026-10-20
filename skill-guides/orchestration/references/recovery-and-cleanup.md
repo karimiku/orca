@@ -90,8 +90,9 @@ under your caller identity — that is not proof nothing happened, so inspect th
 affected Task, Dispatch, and terminal before deciding whether to retry.
 
 When a worker's terminal accepted input but the submit is unconfirmed, use
-`terminal send --wait-submit <seconds>`: it observes the accepted prompt for that
-long and, on timeout, returns the input-accepted receipt without resending.
+`terminal send --wait-submit <seconds>` (default 10 on current hosts): it observes
+the accepted prompt for that long and, on timeout, returns the input-accepted
+receipt without resending and exits 75 for an observable agent.
 
 ## Refused starts
 

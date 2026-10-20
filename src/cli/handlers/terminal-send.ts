@@ -2,7 +2,7 @@ import type { RuntimeTerminalSend } from '../../shared/runtime-types'
 import { TERMINAL_PROMPT_DELIVERY_RUNTIME_CAPABILITY } from '../../shared/protocol-version'
 import type { CommandHandler } from '../dispatch'
 import { formatTerminalSend, printResult, terminalSendWarnings } from '../format'
-import { getOptionalPositiveIntegerFlag, getOptionalStringFlag } from '../flags'
+import { getOptionalNonNegativeIntegerFlag, getOptionalStringFlag } from '../flags'
 import { readRetryRequestFlag } from '../retry-request-flag'
 import { RuntimeClientError } from '../runtime-client'
 import { attachUnverifiedTerminalPromptRecovery } from '../runtime/terminal-prompt-mutation-recovery'
@@ -10,14 +10,18 @@ import { getTerminalHandle } from '../selectors'
 
 type TerminalSendResult = { send: RuntimeTerminalSend; warnings?: string[] }
 
+const DEFAULT_WAIT_SUBMIT_SECONDS = 10
+// Why: EX_TEMPFAIL, already this CLI's "committed but not finished" code; lets scripts tell it from a refusal (1).
+const TURN_NOT_STARTED_EXIT_CODE = 75
+
 export const terminalSendHandler: CommandHandler = async ({ flags, client, cwd, json }) => {
   const text = getOptionalStringFlag(flags, 'text')
   const enter = flags.get('enter') === true
   const interrupt = flags.get('interrupt') === true
   const promptCandidate = !!text && enter && !interrupt
   const retryRequest = readRetryRequestFlag(flags)
-  const waitSubmitSeconds = getOptionalPositiveIntegerFlag(flags, 'wait-submit')
-  if ((retryRequest || waitSubmitSeconds) && !promptCandidate) {
+  const waitSubmitSeconds = getOptionalNonNegativeIntegerFlag(flags, 'wait-submit')
+  if ((retryRequest || waitSubmitSeconds !== undefined) && !promptCandidate) {
     throw new RuntimeClientError(
       'invalid_argument',
       '--retry-request and --wait-submit require --text with --enter and without --interrupt.'
@@ -26,7 +30,6 @@ export const terminalSendHandler: CommandHandler = async ({ flags, client, cwd, 
   if (waitSubmitSeconds && waitSubmitSeconds > 3600) {
     throw new RuntimeClientError('invalid_argument', '--wait-submit must be at most 3600 seconds.')
   }
-  const waitSubmitMs = waitSubmitSeconds ? waitSubmitSeconds * 1000 : undefined
   let promptDeliverySupported = false
   let promptDeliveryRuntimeId: string | null = null
   if (promptCandidate) {
@@ -48,12 +51,17 @@ export const terminalSendHandler: CommandHandler = async ({ flags, client, cwd, 
       'This Orca host cannot honor --retry-request and never recorded this request ID. This attempt sent no input, but an earlier prompt may have been delivered; inspect the terminal and do not resend unless you independently prove it was not delivered, because updating the host cannot make this specific retry idempotent.'
     )
   }
-  if (waitSubmitMs && !promptDeliverySupported) {
+  if (waitSubmitSeconds && !promptDeliverySupported) {
     throw new RuntimeClientError(
       'incompatible_runtime',
       'This Orca host does not support --wait-submit. No input was sent; update Orca on the execution host, or omit only --wait-submit for a legacy prompt whose delivery cannot be observed or retried safely.'
     )
   }
+  // Why: accepted != started; observe by default, but only on hosts that can honor it (old hosts keep legacy sends).
+  const effectiveWaitSeconds =
+    waitSubmitSeconds ??
+    (promptCandidate && promptDeliverySupported ? DEFAULT_WAIT_SUBMIT_SECONDS : 0)
+  const waitSubmitMs = effectiveWaitSeconds ? effectiveWaitSeconds * 1000 : undefined
   const params = {
     terminal: await getTerminalHandle(flags, cwd, client),
     text,
@@ -109,5 +117,19 @@ export const terminalSendHandler: CommandHandler = async ({ flags, client, cwd, 
   )
   if (!result.result.send.accepted) {
     process.exitCode = 1
+  } else if (waitSubmitMs && turnStartUnobserved(result.result.send)) {
+    process.exitCode = TURN_NOT_STARTED_EXIT_CODE
   }
+}
+
+// Providers Orca cannot observe, or an observation it could not make, never fail the send.
+function turnStartUnobserved(send: RuntimeTerminalSend): boolean {
+  const prompt = send.prompt
+  return (
+    !!prompt &&
+    prompt.provider !== 'unsupported' &&
+    prompt.provider !== 'old-host' &&
+    prompt.observation !== 'unsupported' &&
+    !prompt.stages.includes('turn_started')
+  )
 }
